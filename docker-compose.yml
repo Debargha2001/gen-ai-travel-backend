@@ -1,0 +1,19 @@
+name: "genai-trip-backend"
+
+services:
+    app:
+        container_name: "genai-trip-backend"
+        build:
+            context: .
+            dockerfile: Dockerfile
+            network: host
+        network_mode: "host"
+        # ulimits:
+        #   nproc: 65535
+        #   nofile:
+        #     soft: 1048576
+        #     hard: 1048576
+        environment:
+            - PORT=8550
+            - NODE_ENV=staging
+        restart: "unless-stopped"

@@ -1,0 +1,29 @@
+@LIVE_URL=https://gen-ai.bdbose.in/api/v1
+
+@LOCAL_URL=http://localhost:4001/api/v1
+
+### Variables
+# Replace with actual JWT token from login
+@JWT_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiRGVibWFseWEgQmlzd2FzIiwiZW1haWwiOiJ2aXBlcmJhbGUuZGJAZ21haWwuY29tIiwidXVpZCI6ImI5Nk1wOUFTaXVZdFByVnFzQ0xtbXg2TURSNjMiLCJpYXQiOjE3NTg0NDI1NDV9.IuEya51TLXhBZaSkNmcN6FIpiOCI2kSJj1-ABcxdtow
+
+### Get All Chats - Testing API
+GET {{LIVE_URL}}/chats
+Authorization: Bearer {{JWT_TOKEN}}
+Content-Type: application/json
+
+
+### Get Single Chat by ID - Testing API
+GET {{LIVE_URL}}/chats/chat-1758409536949-4se1kh2q1
+Authorization: Bearer {{JWT_TOKEN}}
+Content-Type: application/json
+
+
+### Create New Chat - Testing API
+POST {{LOCAL_URL}}/chats
+Authorization: Bearer {{JWT_TOKEN}}
+Content-Type: application/json
+
+{
+    "sessionId": "chat-1758442605684-rmkgibrn0",
+    "userMessage": "Hello, I want to travel from kolkata to mumbai from 6th october, 2025 to 9th october, 2025. Only I will travel. Can you help me plan my trip?"
+}
