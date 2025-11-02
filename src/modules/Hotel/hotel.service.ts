@@ -1,47 +1,114 @@
-import axios from "axios";
+import { GoogleGenAI } from "@google/genai";
+import { AmadeusHotelByCityResponse, AmadeusHotelOffer } from "../../vendor/amadeus/amadeus.schema.js";
+import * as AmadeusVendor from "../../vendor/amadeus/amadeus.vendor.js";
 import { config } from "../../utils/config.js";
+import { HotelSearchOptions, NormalizedHotel } from "./hotel.schema.js";
+import { logger } from "../../utils/logger.js";
 
-const AMADEUS_CLIENT_ID = config.get("AMADEUS_CLIENT_ID");
-const AMADEUS_CLIENT_SECRET = config.get("AMADEUS_CLIENT_SECRET");
+const MODULE = "HotelService";
 
-const AMADEUS_OAUTH_TOKEN_URL = "https://test.api.amadeus.com/v1/security/oauth2/token";
-const AMADEUS_HOTELS_BY_CITY_URL =
-  "https://test.api.amadeus.com/v1/reference-data/locations/hotels/by-city";
-const AMADEUS_HOTEL_OFFERS_URL = "https://test.api.amadeus.com/v3/shopping/hotel-offers";
+/**
+ * Generate dummy hotel data using Gemini AI when API returns empty results
+ */
+async function generateDummyHotels(options: HotelSearchOptions): Promise<NormalizedHotel[]> {
+  try {
+    const ai = new GoogleGenAI({
+      vertexai: true,
+      apiKey: config.get("VERTEX_API_KEY"),
+    });
 
-export interface HotelSearchOptions {
-  cityCode: string;
-  checkInDate: string;
-  checkOutDate: string;
-  adults?: number;
-  children?: number;
-  currency?: string;
-  maxPrice?: number;
-  maxResults?: number;
-}
+    const prompt = `Generate realistic dummy hotel data for the following search criteria:
+- City Code: ${options.cityCode}
+- Check-in Date: ${options.checkInDate}
+- Check-out Date: ${options.checkOutDate}
+- Adults: ${options.adults}
+- Children: ${options.children || 0}
+- Currency: ${options.currency || "INR"}
+- Max Price: ${options.maxPrice || "N/A"}
 
-export interface NormalizedHotel {
-  id: string;
-  name: string;
-  address: string;
-  cityCode: string;
-  price: string;
-  currency: string;
-  checkIn: string;
-  checkOut: string;
-}
+Generate exactly 5 realistic hotel options with actual hotel names that could exist in or near the city code ${options.cityCode}. Make sure prices are realistic for the location and duration, include real street addresses, and use proper hotel naming conventions.
 
-async function getAmadeusAccessToken(): Promise<string> {
-  const params = new URLSearchParams();
-  params.append("grant_type", "client_credentials");
-  params.append("client_id", AMADEUS_CLIENT_ID);
-  params.append("client_secret", AMADEUS_CLIENT_SECRET);
+Return ONLY a valid JSON array with this exact structure (no markdown, no explanation):
+[
+  {
+    "id": "HOTEL001",
+    "name": "Grand Plaza Hotel",
+    "address": "123 Main Street, City Center",
+    "cityCode": "${options.cityCode}",
+    "price": "12500.00",
+    "currency": "${options.currency || "INR"}",
+    "checkIn": "${options.checkInDate}",
+    "checkOut": "${options.checkOutDate}"
+  }
+]
 
-  const response = await axios.post(AMADEUS_OAUTH_TOKEN_URL, params.toString(), {
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  });
+Important: Return ONLY the JSON array, no additional text or markdown formatting.`;
 
-  return response.data.access_token;
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+      },
+    });
+
+    const generatedText = response.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+    const dummyHotels = JSON.parse(generatedText) as NormalizedHotel[];
+    
+    // Validate and fix generated data to ensure correct city code
+    const validatedHotels = dummyHotels.map(hotel => ({
+      ...hotel,
+      cityCode: options.cityCode, // Ensure correct city
+      currency: options.currency || "INR", // Ensure correct currency
+      checkIn: options.checkInDate, // Ensure correct check-in date
+      checkOut: options.checkOutDate, // Ensure correct check-out date
+    }));
+    logger.info({
+      message: "Generated dummy hotels using Gemini AI",
+      module: MODULE,
+      data: { cityCode: options.cityCode, generatedCount: validatedHotels.length },
+    });
+    return validatedHotels.slice(0, options.maxResults || 10);
+  } catch (error) {
+    logger.error({
+      message: "Error generating dummy hotels",
+      module: MODULE,
+      data: error,
+    });
+    // Fallback to hardcoded dummy data if Gemini fails
+    return [
+      {
+        id: "HOTEL-DUMMY-1",
+        name: "Grand Central Hotel",
+        address: "City Center, Main Boulevard",
+        cityCode: options.cityCode,
+        price: "12500.00",
+        currency: options.currency || "INR",
+        checkIn: options.checkInDate,
+        checkOut: options.checkOutDate,
+      },
+      {
+        id: "HOTEL-DUMMY-2",
+        name: "Royal Palace Inn",
+        address: "Downtown District, Park Avenue",
+        cityCode: options.cityCode,
+        price: "15000.00",
+        currency: options.currency || "INR",
+        checkIn: options.checkInDate,
+        checkOut: options.checkOutDate,
+      },
+      {
+        id: "HOTEL-DUMMY-3",
+        name: "Comfort Suites",
+        address: "Airport Road, Business District",
+        cityCode: options.cityCode,
+        price: "9800.00",
+        currency: options.currency || "INR",
+        checkIn: options.checkInDate,
+        checkOut: options.checkOutDate,
+      },
+    ].slice(0, options.maxResults || 10);
+  }
 }
 
 /**
@@ -53,73 +120,97 @@ export async function searchHotels(options: HotelSearchOptions): Promise<Normali
     checkInDate,
     checkOutDate,
     adults = 1,
-    currency = "USD",
+    currency = "INR",
     maxPrice,
     maxResults = 10,
   } = options;
 
   try {
-    const token = await getAmadeusAccessToken();
-
     // Step 1: Get hotel IDs by city
-    const hotelsRes = await axios.get(AMADEUS_HOTELS_BY_CITY_URL, {
-      headers: { Authorization: `Bearer ${token}` },
-      params: { cityCode },
+    const hotelsResponse = await AmadeusVendor.getAmadeusHotelsByCity({
+      cityCode,
     });
 
-    const hotelIds: string[] =
-      hotelsRes.data?.data?.map((h: { hotelId: string }) => h.hotelId) || [];
+    if (hotelsResponse.error) {
+      // If API returns an error (like invalid city code), generate dummy data
+      logger.info({
+        message: "Hotel API returned error, generating dummy data",
+        module: MODULE,
+        data: { cityCode },
+      });
+      return await generateDummyHotels(options);
+    }
+
+    const hotelsData = (hotelsResponse.response.body as AmadeusHotelByCityResponse)?.data || [];
+    const hotelIds: string[] = hotelsData.map((h) => h.hotelId);
+    logger.info({
+      message: `Found ${hotelIds.length} hotels in city ${cityCode} from Amadeus API`,
+      module: MODULE,
+      data: { cityCode, hotelIds },
+    });
     if (!hotelIds.length) {
-      throw new Error(`No hotels found for cityCode=${cityCode}`);
+      logger.info({
+        message: "No hotels found from Amadeus API, generating dummy data...",
+        module: MODULE,
+        data: { cityCode },
+      });
+      return await generateDummyHotels(options);
     }
 
     // Limit hotelIds to avoid overly long query strings
     const limitedHotelIds = hotelIds.slice(0, 20).join(",");
 
     // Step 2: Get offers for these hotel IDs
-    const offersRes = await axios.get(AMADEUS_HOTEL_OFFERS_URL, {
-      headers: { Authorization: `Bearer ${token}` },
-      params: {
-        hotelIds: limitedHotelIds,
-        checkInDate,
-        checkOutDate,
-        adults,
-        currency,
-        priceRange: maxPrice ? `0-${maxPrice}` : undefined,
-      },
+    const offersResponse = await AmadeusVendor.getAmadeusHotelOffers({
+      hotelIds: limitedHotelIds,
+      checkInDate,
+      checkOutDate,
+      adults,
+      currency,
+      priceRange: maxPrice ? `0-${maxPrice}` : undefined,
     });
 
-    const data = offersRes.data?.data || [];
-
-    return data.slice(0, maxResults).map(
-      (hotel: {
-        id: string;
-        hotel: { hotelId: string; name: string; address: { lines: string[]; cityCode: string } };
-        offers: {
-          price: { total: string; currency: string };
-          checkInDate: string;
-          checkOutDate: string;
-        }[];
-      }) => {
-        const offer = hotel.offers?.[0];
-        return {
-          id: hotel.hotel?.hotelId || hotel.id,
-          name: hotel.hotel?.name,
-          address: hotel.hotel?.address?.lines?.join(", "),
-          cityCode: hotel.hotel?.address?.cityCode,
-          price: offer?.price?.total,
-          currency: offer?.price?.currency,
-          checkIn: offer?.checkInDate,
-          checkOut: offer?.checkOutDate,
-        };
-      }
-    );
-  } catch (error: unknown) {
-    if (axios.isAxiosError(error)) {
-      console.error("Error fetching hotels:", error.response?.data || error.message);
-    } else {
-      console.error("Error fetching hotels:", error);
+    if (offersResponse.error) {
+      // If API returns an error, generate dummy data
+      logger.error({
+        message: "Hotel offers API returned error, generating dummy data",
+        module: MODULE,
+        data: { cityCode },
+      });
+      return await generateDummyHotels(options);
     }
-    throw error;
+
+    const offersData = offersResponse.response.body?.data || [];
+
+    // If no hotel offers found, generate dummy data using Gemini
+    if (offersData.length === 0) {
+      logger.error({
+        message: "No hotel offers found from Amadeus API, generating dummy data",
+        module: MODULE,
+        data: { cityCode },
+      })
+      return await generateDummyHotels(options);
+    }
+
+    return offersData.slice(0, maxResults).map((hotel: AmadeusHotelOffer) => {
+      const offer = hotel.offers?.[0];
+      return {
+        id: hotel.hotel?.hotelId || hotel.id,
+        name: hotel.hotel?.name || "",
+        address: hotel.hotel?.address?.lines?.join(", ") || "",
+        cityCode: hotel.hotel?.address?.cityCode || "",
+        price: offer?.price?.total || "",
+        currency: offer?.price?.currency || "",
+        checkIn: offer?.checkInDate || "",
+        checkOut: offer?.checkOutDate || "",
+      };
+    });
+  } catch (error: unknown) {
+    logger.error({
+      message: "Error fetching hotels",
+      data: error,
+      module: MODULE,
+    });
+    throw new Error("Error fetching hotels");
   }
 }

@@ -85,7 +85,11 @@ export async function login(data: { token: string }): Promise<ServiceResponse<un
 
   const [userErr, user] = await UserRepository.getUserByEmail(email);
   if (userErr) {
-    console.error("Error fetching user by email:", userErr);
+    logger.error({
+      message: "Error fetching user by email",
+      module: MODULE,
+      error: userErr,
+    })
     return ServiceResponse.error([], userErr.message, { statusCode: 404 });
   }
 
@@ -111,7 +115,11 @@ export async function login(data: { token: string }): Promise<ServiceResponse<un
   });
 
   if (jwtError) {
-    console.error("Error generating JWT token:", jwtError);
+    logger.error({
+      message: "Error generating JWT token",
+      module: MODULE,
+      error: jwtError,
+    })
     return ServiceResponse.error([], jwtError.message, { statusCode: 500 });
   }
 

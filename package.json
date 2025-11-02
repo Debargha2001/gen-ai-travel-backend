@@ -10,7 +10,16 @@
     "format:check": "prettier --check \"src/**/*.{ts,js,json}\"",
     "lint": "eslint \"src/**/*.{ts,js}\"",
     "lint:fix": "eslint \"src/**/*.{ts,js}\" --fix",
-    "lint:format": "npm run format && npm run lint:fix"
+    "lint:format": "npm run format && npm run lint:fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:amadeus": "vitest run __tests__/amadeus.vendor.test.ts",
+    "test:flight:dummy": "vitest run __tests__/flight.dummy.test.ts",
+    "test:hotel:dummy": "vitest run __tests__/hotel.dummy.test.ts",
+    "test:trip": "vitest run __tests__/trip.planning.test.ts",
+    "test:validation": "vitest run __tests__/dummy.data.validation.test.ts",
+    "test:destination": "vitest run __tests__/destination.validation.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.20.0",
@@ -22,6 +31,7 @@
     "firebase-admin": "^13.5.0",
     "google-auth-library": "^10.3.0",
     "googleapis": "^159.0.0",
+    "got": "^14.6.1",
     "hono": "^4.9.6",
     "jsonwebtoken": "^9.0.2",
     "winston": "^3.17.0",
@@ -43,6 +53,7 @@
     "prettier": "^3.0.0",
     "tsx": "^4.7.1",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.44.0"
+    "typescript-eslint": "^8.44.0",
+    "vitest": "^1.6.0"
   }
 }

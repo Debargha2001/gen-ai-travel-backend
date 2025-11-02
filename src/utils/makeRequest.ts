@@ -1,208 +1,240 @@
-// import { HTTPError, OptionsOfJSONResponseBody, RequestError, got } from "got";
+import { HTTPError, type OptionsOfJSONResponseBody, RequestError, got } from "got";
 // import axios, { AxiosRequestConfig, AxiosError } from "axios";
-// import {
-//     ErrorMakeHttpJsonCallResponse,
-//     MakeHttpJsonCallPayload,
-//     MakeHttpJsonCallResponse,
-//     MakeHttpStreamCallResponse,
-// } from "../types/utils/makeRequest.js";
-// import { logger } from "./logger.js";
+// import axios, { AxiosRequestConfig, AxiosError } from "axios";
+import type {
+    ErrorMakeHttpJsonCallResponse,
+    MakeHttpJsonCallPayload,
+    MakeHttpJsonCallResponse,
+} from "../types/makeRequest.js";
+import { logger } from "./logger.js";
 
-// export async function makeHttpJsonCall<
-//     RequestBody = Record<string | number, unknown> | undefined,
-//     ResponseBody = Record<string | number, unknown> | undefined,
-//     ErrorResponseBody = ResponseBody,
-// >(
-//     payload: MakeHttpJsonCallPayload<RequestBody>
-// ): Promise<MakeHttpJsonCallResponse<ResponseBody, ErrorResponseBody>> {
-//     const options: OptionsOfJSONResponseBody = {
-//         method: payload.method,
-//         responseType: "json",
-//         retry: {
-//             limit: 0,
-//         },
-//         searchParams: payload.searchParams,
-//         timeout: {
-//             request:
-//                 1000 *
-//                 (typeof payload.requestTimeoutSec === "number" ? payload.requestTimeoutSec : 30), // 30 secs
-//         },
-//     };
+export async function makeHttpJsonCall<
+    RequestBody = Record<string | number, unknown> | undefined,
+    ResponseBody = Record<string | number, unknown> | undefined,
+    ErrorResponseBody = ResponseBody,
+>(
+    payload: MakeHttpJsonCallPayload<RequestBody>
+): Promise<MakeHttpJsonCallResponse<ResponseBody, ErrorResponseBody>> {
+    const options: OptionsOfJSONResponseBody = {
+        method: payload.method,
+        responseType: "json",
+        retry: {
+            limit: 0,
+        },
+        searchParams: payload.searchParams,
+        timeout: {
+            request:
+                1000 *
+                (typeof payload.requestTimeoutSec === "number" ? payload.requestTimeoutSec : 30), // 30 secs
+        },
+    };
 
-//     if (payload.username) {
-//         options.username = payload.username;
-//     }
+    if (payload.username) {
+        options.username = payload.username;
+    }
 
-//     if (payload.password) {
-//         options.password = payload.password;
-//     }
+    if (payload.password) {
+        options.password = payload.password;
+    }
 
-//     options.headers = { "trigger-from": "wocam-service" };
+    options.headers = { "trigger-from": "wocam-service" };
 
-//     if ("headers" in payload) {
-//         options.headers = { ...options.headers, ...payload.headers };
-//     }
+    if ("headers" in payload) {
+        options.headers = { ...options.headers, ...payload.headers };
+    }
 
-//     if (
-//         payload.method !== "get" &&
-//         "body" in payload &&
-//         payload.body &&
-//         typeof payload.body === "object"
-//     ) {
-//         options.json = payload.body;
-//     }
-//     try {
-//         const response = await got<ResponseBody>(new URL(payload.url), options);
-//         // console.timeEnd("api time");
-//         response?.destroy();
-//         return {
-//             error: false,
-//             response: {
-//                 body: response.body,
-//                 headers: response.headers,
-//                 statusCode: response.statusCode,
-//                 statusMessage: response.statusMessage,
-//             },
-//         };
-//     } catch (err) {
-//         const errorPayload: ErrorMakeHttpJsonCallResponse<ErrorResponseBody>["errors"] = {
-//             message: "something went wrong",
-//             cause: {},
-//         };
+    if (payload.followRedirect) {
+        options.followRedirect = payload.followRedirect;
+        options.maxRedirects = 10;
+        options.hooks = {
+            beforeRedirect: [
+                (options) => {
+                    // Retain authorization header on redirects to different hostnames
+                    if (payload.headers?.Authorization) {
+                        options.headers.authorization = payload.headers.Authorization;
+                    }
+                },
+            ],
+        };
+    }
 
-//         if (err instanceof HTTPError) {
-//             logger.warn(
-//                 "[Http Error] unable to make request to [%s] -> %s",
-//                 err.response.requestUrl,
-//                 err.message
-//             );
-//             errorPayload.message = err.response.body.message ?? err.message;
-//             errorPayload.cause = err.cause;
-//             errorPayload.statusCode = err.response.statusCode;
-//             errorPayload.body = err.response.body;
-//             errorPayload.headers = err.response.headers;
-//             errorPayload.statusMessage = err.response.statusMessage;
-//             return { error: true, errors: errorPayload };
-//         }
+    if (
+        payload.method !== "get" &&
+        "body" in payload &&
+        payload.body &&
+        typeof payload.body === "object"
+    ) {
+        options.json = payload.body;
+    }
+    try {
+        const response = await got<ResponseBody>(new URL(payload.url), options);
+        // console.timeEnd("api time");
+        response?.destroy();
+        return {
+            error: false,
+            response: {
+                body: response.body,
+                headers: response.headers,
+                statusCode: response.statusCode,
+                statusMessage: response.statusMessage,
+            },
+        };
+    } catch (err) {
+        const errorPayload: ErrorMakeHttpJsonCallResponse<ErrorResponseBody>["errors"] = {
+            message: "something went wrong",
+            cause: {},
+        };
 
-//         if (err instanceof RequestError) {
-//             logger.warn(
-//                 "[Request Error] unable to make request [%s] -> %s",
-//                 err.request?.requestUrl ?? "unknown",
-//                 err.message
-//             );
-//             errorPayload.message = err.message;
-//             errorPayload.cause = err.cause;
-//             errorPayload.statusCode = err.response?.statusCode;
-//             errorPayload.body = err.response?.body;
-//             return { error: true, errors: errorPayload };
-//         }
+        if (err instanceof HTTPError) {
+            logger.warn({
+                message: `[Http Error] unable to make request to [${err.response.requestUrl}] -> ${err.message}`,
+                module: "makeHttpJsonCall",
+                data: {
+                    requestUrl: err.response.requestUrl,
+                    errorMessage: err.message,
+                },
+            });
+            errorPayload.message = err.response.body.message ?? err.message;
+            errorPayload.cause = err.cause;
+            errorPayload.statusCode = err.response.statusCode;
+            errorPayload.body = err.response.body;
+            errorPayload.headers = err.response.headers;
+            errorPayload.statusMessage = err.response.statusMessage;
+            return { error: true, errors: errorPayload };
+        }
 
-//         const { message, stack, cause } = err as Error;
-//         logger.error("[Error] unable to make request -> %s", message);
-//         return {
-//             error: true,
-//             errors: {
-//                 message,
-//                 stack,
-//                 cause,
-//             },
-//         };
-//     }
-// }
+        if (err instanceof RequestError) {
+            // logger.warn(
+            //     "[Request Error] unable to make request [%s] -> %s",
+            //     err.request?.requestUrl ?? "unknown",
+            //     err.message
+            // );
+            errorPayload.message = err.message;
+            errorPayload.cause = err.cause;
+            errorPayload.statusCode = err.response?.statusCode;
+            errorPayload.body = err.response?.body;
+            return { error: true, errors: errorPayload };
+        }
 
-// export async function makeHttpFormDataCall<
-//     RequestBody = FormData | undefined,
-//     ResponseBody = Record<string | number, unknown> | undefined,
-//     ErrorResponseBody = ResponseBody,
-// >(
-//     payload: MakeHttpJsonCallPayload<RequestBody>
-// ): Promise<MakeHttpJsonCallResponse<ResponseBody, ErrorResponseBody>> {
-//     const options: OptionsOfJSONResponseBody = {
-//         method: payload.method,
-//         responseType: "json",
-//         retry: {
-//             limit: 0,
-//         },
-//         searchParams: payload.searchParams,
-//         timeout: {
-//             request:
-//                 1000 *
-//                 (typeof payload.requestTimeoutSec === "number" ? payload.requestTimeoutSec : 30), // 30 secs
-//         },
-//     };
-//     options.headers = {
-//         "trigger-from": "wocam-service",
-//         "Content-Type": "application/x-www-form-urlencoded",
-//     };
+        const { message, stack, cause } = err as Error;
+        logger.error({
+            message: "[Error] unable to make request ",
+            module: "makeHttpJsonCall",
+            error: err as Error, 
+        });
+        return {
+            error: true,
+            errors: {
+                message,
+                stack,
+                cause,
+            },
+        };
+    }
+}
 
-//     if ("headers" in payload) {
-//         options.headers = { ...options.headers, ...payload.headers };
-//     }
+export async function makeHttpFormDataCall<
+    RequestBody = FormData | undefined,
+    ResponseBody = Record<string | number, unknown> | undefined,
+    ErrorResponseBody = ResponseBody,
+>(
+    payload: MakeHttpJsonCallPayload<RequestBody>
+): Promise<MakeHttpJsonCallResponse<ResponseBody, ErrorResponseBody>> {
+    const options: OptionsOfJSONResponseBody = {
+        method: payload.method,
+        responseType: "json",
+        retry: {
+            limit: 0,
+        },
+        searchParams: payload.searchParams,
+        timeout: {
+            request:
+                1000 *
+                (typeof payload.requestTimeoutSec === "number" ? payload.requestTimeoutSec : 30), // 30 secs
+        },
+    };
+    options.headers = {
+        "trigger-from": "wocam-service",
+        "Content-Type": "application/x-www-form-urlencoded",
+    };
 
-//     if (payload.method !== "get" && "body" in payload) {
-//         options.form = payload.body as Record<string, unknown>;
-//     }
+    if ("headers" in payload) {
+        options.headers = { ...options.headers, ...payload.headers };
+    }
 
-//     try {
-//         const response = await got<ResponseBody>(new URL(payload.url), options);
-//         // console.timeEnd("api time");
-//         response?.destroy();
-//         return {
-//             error: false,
-//             response: {
-//                 body: response.body,
-//                 headers: response.headers,
-//                 statusCode: response.statusCode,
-//                 statusMessage: response.statusMessage,
-//             },
-//         };
-//     } catch (err) {
-//         const errorPayload: ErrorMakeHttpJsonCallResponse<ErrorResponseBody>["errors"] = {
-//             message: "something went wrong",
-//             cause: {},
-//         };
+    if (payload.method !== "get" && "body" in payload) {
+        options.form = payload.body as Record<string, unknown>;
+    }
 
-//         if (err instanceof HTTPError) {
-//             logger.warn(
-//                 "[Http Error] unable to make request to [%s] -> %s",
-//                 err.response.requestUrl,
-//                 err.message
-//             );
-//             errorPayload.message = err.message;
-//             errorPayload.cause = err.cause;
-//             errorPayload.statusCode = err.response.statusCode;
-//             errorPayload.body = err.response.body;
-//             errorPayload.headers = err.response.headers;
-//             errorPayload.statusMessage = err.response.statusMessage;
-//             return { error: true, errors: errorPayload };
-//         }
+    try {
+        const response = await got<ResponseBody>(new URL(payload.url), options);
+        // console.timeEnd("api time");
+        response?.destroy();
+        return {
+            error: false,
+            response: {
+                body: response.body,
+                headers: response.headers,
+                statusCode: response.statusCode,
+                statusMessage: response.statusMessage,
+            },
+        };
+    } catch (err) {
+        const errorPayload: ErrorMakeHttpJsonCallResponse<ErrorResponseBody>["errors"] = {
+            message: "something went wrong",
+            cause: {},
+        };
 
-//         if (err instanceof RequestError) {
-//             logger.warn(
-//                 "[Request Error] unable to make request [%s] -> %s",
-//                 err.request?.requestUrl ?? "unknown",
-//                 err.message
-//             );
-//             errorPayload.message = err.message;
-//             errorPayload.cause = err.cause;
-//             errorPayload.statusCode = err.response?.statusCode;
-//             errorPayload.body = err.response?.body;
-//             return { error: true, errors: errorPayload };
-//         }
+        if (err instanceof HTTPError) {
+            logger.warn({
+                message: `[Http Error] unable to make request to [${err.response.requestUrl}] -> ${err.message}`,
+                module: "makeHttpFormDataCall",
+                data: {
+                    requestUrl: err.response.requestUrl,
+                    errorMessage: err.message,
+                },
+            });
+            errorPayload.message = err.message;
+            errorPayload.cause = err.cause;
+            errorPayload.statusCode = err.response.statusCode;
+            errorPayload.body = err.response.body;
+            errorPayload.headers = err.response.headers;
+            errorPayload.statusMessage = err.response.statusMessage;
+            return { error: true, errors: errorPayload };
+        }
 
-//         const { message, stack, cause } = err as Error;
-//         logger.error("[Error] unable to make request -> %s", message);
-//         return {
-//             error: true,
-//             errors: {
-//                 message,
-//                 stack,
-//                 cause,
-//             },
-//         };
-//     }
-// }
+        if (err instanceof RequestError) {
+            logger.warn({
+                message: `[Request Error] unable to make request [${err.request?.requestUrl ?? "unknown"}] -> ${err.message}`,
+                module: "makeHttpFormDataCall",
+                data: {
+                    requestUrl: err.request?.requestUrl ?? "unknown",
+                    errorMessage: err.message,
+                },
+            });
+            errorPayload.message = err.message;
+            errorPayload.cause = err.cause;
+            errorPayload.statusCode = err.response?.statusCode;
+            errorPayload.body = err.response?.body;
+            return { error: true, errors: errorPayload };
+        }
+
+        const { message, stack, cause } = err as Error;
+        logger.error({
+            message: "[Error] unable to make request ",
+            module: "makeHttpFormDataCall",
+            error: err as Error, 
+        });
+        return {
+            error: true,
+            errors: {
+                message,
+                stack,
+                cause,
+            },
+        };
+    }
+}
 
 // export async function makeHttpTextDataCall<
 //     RequestBody = FormData | undefined,
